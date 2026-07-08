@@ -1,0 +1,24 @@
+# Credenciales (repo publico: NO subir el WiFi real)
+firmware/src/config.h
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+gesture-model/data/
+# modelos generados por el entrenamiento (se regeneran); pero conservamos el
+# modelo de manos de MediaPipe (hand_landmarker.task) para que sea ejecutable.
+gesture-model/models/*
+!gesture-model/models/hand_landmarker.task
+admin-system/backend/db.sqlite3
+admin-system/backend/media/
+
+# Node
+node_modules/
+admin-system/frontend/dist/
+
+# PlatformIO
+firmware/.pio/
+
+# OS
+.DS_Store

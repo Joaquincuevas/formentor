@@ -1,0 +1,18 @@
+# Credenciales (repo publico)
+**/config.h
+
+# Entornos y dependencias
+**/.venv/
+**/node_modules/
+**/__pycache__/
+*.pyc
+**/.pio/
+**/dist/
+
+# Datos generados
+**/db.sqlite3
+**/media/
+
+# OS
+.DS_Store
+**/.DS_Store

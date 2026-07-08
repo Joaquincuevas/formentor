@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "casilleros-inteligentes/admin-system/backend/.venv/bin/python",
+      "runtimeArgs": ["casilleros-inteligentes/admin-system/backend/manage.py", "runserver", "8000"],
+      "port": 8000
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "casilleros-inteligentes/admin-system/frontend", "run", "dev"],
+      "port": 5173
+    }
+  ]
+}
