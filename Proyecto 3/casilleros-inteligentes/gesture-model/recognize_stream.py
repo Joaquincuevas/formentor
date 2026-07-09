@@ -1,10 +1,14 @@
 """Reconocimiento de gestos en tiempo real sobre el video de la ESP32-CAM.
 
 ENFOQUE A (IA en el computador): la ESP32-CAM transmite MJPEG por WiFi; aqui, en el
-Mac, MediaPipe detecta la mano y clasificamos los 6 gestos por REGLAS (dedos
-extendidos), sin necesidad de entrenar un modelo. Cuando la secuencia de 4 gestos
-coincide con la clave del casillero, se publica la apertura por MQTT (el Sistema de
-Administracion la registra y envia el email al dueno).
+Mac, MediaPipe detecta la mano y clasificamos los 6 gestos. Cuando la secuencia de 4
+gestos coincide con la clave del casillero, se publica la apertura por MQTT (el
+Sistema de Administracion la registra y envia el email al dueno).
+
+Dos clasificadores disponibles (--classifier):
+  - rules    : heuristica de dedos extendidos, sin entrenar (por defecto).
+  - keypoint : modelo TFLite entrenado (pipeline portado de kinivi). Requiere haber
+               corrido collect_keypoints.py + train_keypoint.py.
 
 Uso tipico (con la cam transmitiendo en http://192.168.1.99/stream):
     python recognize_stream.py --stream-url http://192.168.1.99/stream \
@@ -22,79 +26,41 @@ from collections import deque
 from datetime import datetime, timezone
 
 import cv2
-import numpy as np
 import requests
 import paho.mqtt.client as mqtt
 
 from gestures import GESTURES, KEY_LENGTH, LABELS, SYMBOLS
 from hand_tracker import HandTracker
+from video_source import open_source
 
 STABLE_FRAMES = 12      # frames seguidos con el mismo gesto para confirmarlo
 COOLDOWN_S = 1.2        # pausa tras confirmar un gesto
+KEYPOINT_MIN_CONF = 0.6 # confianza minima del clasificador entrenado
 
 
 # --------------------------------------------------------------------------
-# Fuente de video: stream MJPEG de la ESP32-CAM o webcam local
+# Clasificadores de gesto: por REGLAS (sin entrenar) o por MODELO (kinivi/TFLite)
 # --------------------------------------------------------------------------
-class MJPEGStream:
-    """Lector resiliente de un stream MJPEG (multipart/x-mixed-replace).
+def make_classifier(kind):
+    """Devuelve una funcion classify(landmarks, handed, frame) -> indice o None.
 
-    El enlace WiFi de la ESP32-CAM puede ser inestable (cortes, timeouts). Si la
-    conexion se cae, reconecta automaticamente en vez de morir, para que la demo
-    siga viva aunque el video sea entrecortado.
+    kind='rules'    -> heuristica de dedos extendidos (no requiere entrenamiento).
+    kind='keypoint' -> clasificador TFLite entrenado con collect_keypoints/train_keypoint
+                       (pipeline portado de kinivi/hand-gesture-recognition-mediapipe).
     """
-    def __init__(self, url):
-        self.url = url
-        self.buf = b""
-        self._connect()
+    if kind == "keypoint":
+        # import diferido: solo cargar TensorFlow si se usa el modelo
+        from keypoint_classifier.keypoint_classifier import KeyPointClassifier
+        from keypoint_preprocess import calc_landmark_list, pre_process_landmark
+        kc = KeyPointClassifier()
 
-    def _connect(self):
-        self.r = requests.get(self.url, stream=True, timeout=8)
-        self.it = self.r.iter_content(chunk_size=4096)
-        self.buf = b""
+        def classify_kp(landmarks, handed, frame):
+            feats = pre_process_landmark(calc_landmark_list(frame, landmarks))
+            idx, conf = kc.predict(feats)
+            return idx if conf >= KEYPOINT_MIN_CONF else None
+        return classify_kp
 
-    def read(self):
-        for _attempt in range(4):  # tolera hasta 4 reconexiones seguidas
-            try:
-                while True:
-                    a = self.buf.find(b"\xff\xd8")   # inicio JPEG
-                    b = self.buf.find(b"\xff\xd9")   # fin JPEG
-                    if a != -1 and b != -1 and b > a:
-                        jpg = self.buf[a:b + 2]
-                        self.buf = self.buf[b + 2:]
-                        img = cv2.imdecode(np.frombuffer(jpg, np.uint8),
-                                           cv2.IMREAD_COLOR)
-                        if img is not None:
-                            return True, img
-                    self.buf += next(self.it)
-            except (requests.exceptions.RequestException, StopIteration):
-                print("[stream] corte, reconectando...")
-                try:
-                    self.r.close()
-                except Exception:
-                    pass
-                try:
-                    self._connect()
-                except Exception:
-                    time.sleep(1)
-        return False, None
-
-    def release(self):
-        try:
-            self.r.close()
-        except Exception:
-            pass
-
-
-def open_source(args):
-    if args.source == "webcam":
-        cap = cv2.VideoCapture(0)
-        return ("webcam", cap)
-    return ("mjpeg", MJPEGStream(args.stream_url))
-
-
-def read_frame(kind, src):
-    return src.read()
+    return lambda landmarks, handed, frame: classify(landmarks, handed)
 
 
 # --------------------------------------------------------------------------
@@ -185,6 +151,8 @@ def main():
     ap.add_argument("--api", default="http://localhost:8090/api")
     ap.add_argument("--email", default="demo@uandes.cl")
     ap.add_argument("--broker", default="localhost")
+    ap.add_argument("--classifier", choices=["rules", "keypoint"], default="rules",
+                    help="'rules' (heuristica) o 'keypoint' (modelo TFLite entrenado)")
     ap.add_argument("--no-window", action="store_true", help="modo headless (sin ventana)")
     args = ap.parse_args()
 
@@ -197,15 +165,17 @@ def main():
     print(f"Clave objetivo casillero {args.locker}: {target} "
           f"-> {' '.join(SYMBOLS[i] for i in target)}")
 
-    kind, src = open_source(args)
+    kind, src = open_source(args.source, args.stream_url)
     tracker = HandTracker(min_conf=0.5)
+    classify_gesture = make_classifier(args.classifier)
+    print(f"Clasificador: {args.classifier}")
 
     recent = deque(maxlen=STABLE_FRAMES)
     entered, last_conf, cooldown = [], None, 0.0
     result_msg, result_until = "", 0.0
 
     while True:
-        ok, frame = read_frame(kind, src)
+        ok, frame = src.read()
         if not ok:
             print("stream terminado / sin frame"); break
         if kind == "webcam":
@@ -215,7 +185,7 @@ def main():
         pred = None
         if landmarks:
             tracker.draw(frame, landmarks)
-            pred = classify(landmarks, handed)
+            pred = classify_gesture(landmarks, handed, frame)
         recent.append(pred if pred is not None else -1)
 
         now = time.time()

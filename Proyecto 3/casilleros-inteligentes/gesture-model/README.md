@@ -35,6 +35,28 @@ python export_tflite.py    # 4. exportar a TFLite int8 + arreglo C para el firmw
 - `models/gesture_model.cc` — el mismo modelo como arreglo C para TFLite Micro.
 - `models/label_map.txt` — índice → nombre del gesto.
 
+## Pipeline basado en kinivi (clasificador por keypoints)
+
+Además del reconocimiento por reglas, se integró el pipeline de
+[kinivi/hand-gesture-recognition-mediapipe](https://github.com/kinivi/hand-gesture-recognition-mediapipe)
+(Apache-2.0), adaptado a la API MediaPipe Tasks y a nuestros 6 gestos. Ver
+[`reference/kinivi/ATTRIBUTION.md`](reference/kinivi/ATTRIBUTION.md).
+
+Flujo para entrenar tu propio clasificador:
+
+```bash
+python collect_keypoints.py                 # 1. graba keypoints (teclas 0..5)
+#   o desde la cam:  python collect_keypoints.py --source mjpeg --stream-url http://192.168.1.99/stream
+python train_keypoint.py                    # 2. entrena -> keypoint_classifier/keypoint_classifier.tflite
+python recognize_stream.py --classifier keypoint --source webcam   # 3. reconoce con el modelo
+```
+
+- `recognize_stream.py --classifier rules` (por defecto) → heurística de dedos, sin entrenar.
+- `recognize_stream.py --classifier keypoint` → usa el modelo TFLite entrenado.
+
+El clasificador entrenado (`keypoint_classifier.tflite`) es la base del modelo que
+luego se reduce para correr en la **ESP32-S3** on-device.
+
 ## Reducción para embebido (lo que pide el enunciado)
 
 1. **Representación por landmarks** → entrada de solo 42 números.
