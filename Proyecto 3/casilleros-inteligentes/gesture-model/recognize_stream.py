@@ -33,7 +33,7 @@ from gestures import GESTURES, KEY_LENGTH, LABELS, SYMBOLS
 from hand_tracker import HandTracker
 from video_source import open_source
 
-STABLE_FRAMES = 12      # frames seguidos con el mismo gesto para confirmarlo
+STABLE_FRAMES = 8       # frames seguidos con el mismo gesto para confirmarlo
 COOLDOWN_S = 1.2        # pausa tras confirmar un gesto
 KEYPOINT_MIN_CONF = 0.6 # confianza minima del clasificador entrenado
 
@@ -70,40 +70,82 @@ def _dist(a, b):
     return ((a.x - b.x) ** 2 + (a.y - b.y) ** 2) ** 0.5
 
 
+def _angle(a, b, c):
+    """Angulo en b formado por los segmentos a-b y b-c (en grados)."""
+    import math
+    ba = (a.x - b.x, a.y - b.y)
+    bc = (c.x - b.x, c.y - b.y)
+    dot = ba[0] * bc[0] + ba[1] * bc[1]
+    mag = (math.hypot(*ba) * math.hypot(*bc)) + 1e-9
+    cos_val = max(-1.0, min(1.0, dot / mag))
+    return math.degrees(math.acos(cos_val))
+
+
 def fingers_up(lm, handedness):
-    """Devuelve [pulgar, indice, medio, anular, menique] como booleanos."""
-    up = []
-    # pulgar: comparar x de la punta (4) e IP (3) segun la mano
-    if handedness == "Right":
-        up.append(lm[4].x < lm[3].x)
-    else:
-        up.append(lm[4].x > lm[3].x)
-    # resto: punta por encima (y menor) de la articulacion PIP
-    for tip, pip in ((8, 6), (12, 10), (16, 14), (20, 18)):
-        up.append(lm[tip].y < lm[pip].y)
-    return up
+    """Devuelve [pulgar, indice, medio, anular, menique] como booleanos.
+
+    Usa distancias a la muneca (lm[0]) en vez de comparar coordenadas crudas,
+    lo que lo hace robusto a rotacion e inclinacion de la mano.
+    """
+    wrist = lm[0]
+    # Referencia de escala: distancia muneca -> base del dedo medio
+    hand_size = _dist(wrist, lm[9]) + 1e-6
+
+    # Dedos indice(8/6/5), medio(12/10/9), anular(16/14/13), menique(20/18/17)
+    # Un dedo esta extendido si su punta esta mas lejos de la muneca que su MCP
+    # y el angulo MCP-PIP-TIP no esta muy cerrado (dedo no doblado).
+    extended = []
+    for tip, pip, mcp in ((8, 6, 5), (12, 10, 9), (16, 14, 13), (20, 18, 17)):
+        d_tip = _dist(wrist, lm[tip]) / hand_size
+        d_mcp = _dist(wrist, lm[mcp]) / hand_size
+        angle = _angle(lm[mcp], lm[pip], lm[tip])
+        extended.append(d_tip > d_mcp * 0.85 and angle > 130)
+
+    # Pulgar: NO se decide aca como booleano simple.  Devolvemos False siempre
+    # y classify() usa una metrica continua dedicada para separar puno/pulgar.
+    return [False] + extended
+
+
+def _thumb_score(lm, hand_size):
+    """Que tan 'extendido y separado' esta el pulgar (0..~2). Valores altos =
+    pulgar claramente arriba; bajos = pulgar pegado al puno."""
+    angle = _angle(lm[2], lm[3], lm[4])
+    d_from_palm = _dist(lm[4], lm[9]) / hand_size   # punta pulgar vs base dedo medio
+    d_from_idx = _dist(lm[4], lm[8]) / hand_size     # punta pulgar vs punta indice
+    return (angle / 180.0) + d_from_palm + d_from_idx
 
 
 def classify(lm, handedness):
     """Devuelve el indice de gesto (0..5) o None."""
-    thumb, index, middle, ring, pinky = fingers_up(lm, handedness)
-    count = sum([thumb, index, middle, ring, pinky])
+    _, index, middle, ring, pinky = fingers_up(lm, handedness)
+    finger_count = sum([index, middle, ring, pinky])
 
     hand_size = _dist(lm[0], lm[9]) + 1e-6
-    pinch = _dist(lm[4], lm[8]) / hand_size   # pulgar-indice juntos = OK
 
-    if pinch < 0.4 and middle and ring and pinky:
+    # OK: pulgar e indice juntos formando circulo, otros dedos extendidos
+    pinch = _dist(lm[4], lm[8]) / hand_size
+    if pinch < 0.35 and middle and ring:
         return 5  # ok
-    if count == 5:
+
+    # Palma: todos o casi todos los dedos extendidos
+    if finger_count >= 3 and index and middle and ring:
         return 0  # palma
-    if count == 0:
-        return 1  # puno
-    if index and middle and not ring and not pinky and not thumb:
+
+    # Victoria: indice + medio extendidos, anular y menique cerrados
+    if index and middle and not ring and not pinky:
         return 2  # victoria
-    if index and not middle and not ring and not pinky and not thumb:
+
+    # Indice: solo indice extendido
+    if index and not middle and not ring and not pinky:
         return 4  # indice
-    if thumb and not index and not middle and not ring and not pinky:
-        return 3  # pulgar arriba
+
+    # Puno vs pulgar arriba: ningun otro dedo extendido, decidir por thumb_score
+    if finger_count == 0:
+        ts = _thumb_score(lm, hand_size)
+        if ts > 2.0:
+            return 3  # pulgar arriba (pulgar claramente separado)
+        return 1      # puno (pulgar pegado o ambiguo -> puno por defecto)
+
     return None
 
 
@@ -183,9 +225,17 @@ def main():
 
         landmarks, handed = tracker.process(frame)
         pred = None
+        finger_dbg = ""
         if landmarks:
             tracker.draw(frame, landmarks)
             pred = classify_gesture(landmarks, handed, frame)
+            if args.classifier == "rules":
+                fu = fingers_up(landmarks, handed)
+                hs = _dist(landmarks[0], landmarks[9]) + 1e-6
+                ts = _thumb_score(landmarks, hs)
+                names = ["I", "M", "A", "Q"]
+                finger_dbg = f"T:{ts:.1f} " + " ".join(
+                    f"{n}{'+'if v else'-'}" for n, v in zip(names, fu[1:]))
         recent.append(pred if pred is not None else -1)
 
         now = time.time()
@@ -213,8 +263,11 @@ def main():
         # --- overlay ---
         txt = LABELS[pred] if pred is not None else "sin gesto"
         cv2.putText(frame, txt, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+        if finger_dbg:
+            cv2.putText(frame, finger_dbg, (10, 55),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
         seq = " ".join(SYMBOLS[g] for g in entered) or "(vacia)"
-        cv2.putText(frame, f"Clave: {seq}", (10, 62),
+        cv2.putText(frame, f"Clave: {seq}", (10, 82),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2)
         if result_msg:
             color = (0, 200, 0) if result_msg == "ABIERTO" else (0, 0, 255)

@@ -13,6 +13,10 @@
 **/db.sqlite3
 **/media/
 
+# Videos / archivos grandes
+*.mov
+*.mp4
+
 # OS
 .DS_Store
 **/.DS_Store
