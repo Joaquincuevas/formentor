@@ -2,6 +2,7 @@
 import random
 from datetime import datetime, timedelta, timezone
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.db.models import Count
 from rest_framework import status, viewsets
@@ -17,23 +18,30 @@ from .serializers import (ControllerSerializer, GestureModelSerializer,
 
 
 # ---------------------------------------------------------------------------
-# Autenticacion (stub de "login con Google")
+# Autenticacion: login con cuenta de Google (Google Identity Services)
 # ---------------------------------------------------------------------------
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def google_login(request):
-    """Autorregistro/login con cuenta de Google.
+def _verify_google_id_token(credential):
+    """Verifica el id_token (JWT) que emite Google y devuelve (email, given_name).
 
-    STUB para desarrollo: en produccion aqui se verifica el id_token de Google
-    (google-auth) y se extrae el email. Por ahora aceptamos el email directo y
-    creamos el usuario si no existe. Devuelve un token de API.
+    Comprueba firma, expiracion, emisor y que el 'aud' coincida con nuestro
+    Client ID. Lanza ValueError si el token no es valido.
     """
-    email = request.data.get("email")
-    if not email:
-        return Response({"detail": "email requerido"}, status=400)
+    from google.oauth2 import id_token as google_id_token
+    from google.auth.transport import requests as google_requests
+
+    idinfo = google_id_token.verify_oauth2_token(
+        credential, google_requests.Request(), settings.GOOGLE_OAUTH_CLIENT_ID)
+    if not idinfo.get("email"):
+        raise ValueError("el token no trae email")
+    if idinfo.get("email_verified") is False:
+        raise ValueError("email no verificado por Google")
+    return idinfo["email"], idinfo.get("given_name", "")
+
+
+def _login_user(email, first_name=""):
+    """Autorregistro/login: crea el usuario si no existe y devuelve su token API."""
     user, created = User.objects.get_or_create(
-        username=email, defaults={"email": email}
-    )
+        username=email, defaults={"email": email, "first_name": first_name})
     if created:
         UserProfile.objects.get_or_create(user=user)
     token, _ = Token.objects.get_or_create(user=user)
@@ -42,6 +50,53 @@ def google_login(request):
         "user": UserSerializer(user).data,
         "created": created,
     })
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def auth_config(request):
+    """Config publica que el frontend consulta para saber como mostrar el login.
+
+    Devuelve el Client ID de Google (publico por diseno) y si el login de
+    desarrollo por email esta disponible.
+    """
+    return Response({
+        "google_client_id": settings.GOOGLE_OAUTH_CLIENT_ID,
+        "dev_login": bool(settings.ALLOW_DEV_LOGIN
+                          and not settings.GOOGLE_OAUTH_CLIENT_ID),
+    })
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def google_login(request):
+    """Autorregistro/login con cuenta de Google.
+
+    Modo real: el frontend envia `credential` (el id_token JWT de Google Identity
+    Services); aqui se verifica contra Google y se extrae el email.
+
+    Modo desarrollo (solo si NO hay Client ID configurado y ALLOW_DEV_LOGIN=1):
+    se acepta `email` directo para poder probar sin montar OAuth.
+    """
+    credential = request.data.get("credential") or request.data.get("id_token")
+
+    if settings.GOOGLE_OAUTH_CLIENT_ID:
+        if not credential:
+            return Response({"detail": "falta 'credential' de Google"}, status=400)
+        try:
+            email, given_name = _verify_google_id_token(credential)
+        except Exception as exc:
+            return Response({"detail": f"token de Google invalido: {exc}"},
+                            status=401)
+        return _login_user(email, given_name)
+
+    # --- sin Client ID: fallback de desarrollo por email ---
+    if not settings.ALLOW_DEV_LOGIN:
+        return Response({"detail": "login por email deshabilitado"}, status=403)
+    email = request.data.get("email")
+    if not email:
+        return Response({"detail": "email requerido"}, status=400)
+    return _login_user(email)
 
 
 # ---------------------------------------------------------------------------

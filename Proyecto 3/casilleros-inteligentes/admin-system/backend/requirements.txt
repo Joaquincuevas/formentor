@@ -4,3 +4,5 @@ Django==4.2.13
 djangorestframework==3.15.1
 django-cors-headers==4.3.1
 paho-mqtt==1.6.1
+# Verificacion del id_token en el login con Google (OAuth)
+google-auth>=2.20,<3

@@ -13,8 +13,13 @@ gesture-model/models/*
 # dataset y modelo entrenado de keypoints (se regeneran; el codigo y labels si van)
 gesture-model/keypoint_classifier/keypoint.csv
 gesture-model/keypoint_classifier/keypoint_classifier.tflite
+gesture-model/keypoint_classifier/keypoint_classifier_int8.tflite
 admin-system/backend/db.sqlite3
 admin-system/backend/media/
+
+# Variables de entorno locales (el .env.example SI se versiona)
+.env
+!.env.example
 
 # Node
 node_modules/

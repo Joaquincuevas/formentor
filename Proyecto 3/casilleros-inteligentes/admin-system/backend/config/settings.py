@@ -88,6 +88,13 @@ EMAIL_BACKEND = os.environ.get(
 )
 DEFAULT_FROM_EMAIL = "casilleros@uandes.cl"
 
+# Login con Google (OAuth). Poner el Client ID de Google Cloud Console para
+# habilitar la verificacion real del id_token. Si queda vacio, se permite el
+# login de desarrollo por email (ver ALLOW_DEV_LOGIN) para poder probar sin OAuth.
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+# Solo dev: aceptar login por email sin verificar. Se ignora si hay Client ID.
+ALLOW_DEV_LOGIN = os.environ.get("ALLOW_DEV_LOGIN", "1") == "1"
+
 # MQTT
 MQTT_BROKER = os.environ.get("MQTT_BROKER", "localhost")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))

@@ -10,6 +10,7 @@ router.register("models", views.GestureModelViewSet, basename="gesturemodel")
 router.register("users", views.UserViewSet, basename="user")
 
 urlpatterns = [
+    path("auth/config/", views.auth_config),
     path("auth/google/", views.google_login),
     path("me/choose-model/", views.choose_model),
     path("dashboard/user/", views.user_dashboard),
