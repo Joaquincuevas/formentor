@@ -27,8 +27,13 @@ export default function Models() {
 
   return (
     <div className="container">
-      <h2>Modelos de gestos</h2>
-      <div className="card" style={{ marginBottom: 16 }}>
+      <div className="page-head">
+        <h2>Modelos de gestos</h2>
+        <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>
+          Administra los modelos de reconocimiento y sus conjuntos de símbolos.
+        </p>
+      </div>
+      <div className="card" style={{ marginBottom: 14 }}>
         <h3>Crear modelo</h3>
         <label>Nombre</label>
         <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />

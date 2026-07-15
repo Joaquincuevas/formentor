@@ -10,7 +10,7 @@ export default function BarChart({ data }) {
         return (
           <g key={d.date}>
             <rect x={i * W + 2} y={50 - h} width={W - 4} height={h}
-                  fill="var(--accent)" rx="1" />
+                  fill="var(--chart)" rx="1" />
             <text x={i * W + W / 2} y={58} fontSize="3" textAnchor="middle"
                   fill="var(--muted)">
               {d.date.slice(5)}

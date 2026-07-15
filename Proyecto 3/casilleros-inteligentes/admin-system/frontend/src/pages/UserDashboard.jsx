@@ -9,11 +9,14 @@ export default function UserDashboard() {
     api.get("/dashboard/user/").then((r) => setData(r.data));
   }, []);
 
-  if (!data) return <div className="container">Cargando…</div>;
+  if (!data) return <div className="container muted">Cargando…</div>;
 
   return (
     <div className="container">
-      <h2>Bienvenido</h2>
+      <div className="page-head">
+        <h2>Dashboard</h2>
+        <p>Actividad de tus casilleros en los últimos 7 días.</p>
+      </div>
       <div className="grid">
         <div className="card" style={{ gridColumn: "1 / -1" }}>
           <h3>Aperturas de casilleros — últimos 7 días</h3>

@@ -9,7 +9,7 @@ export default function SuperDashboard() {
     api.get("/dashboard/superuser/").then((r) => setData(r.data));
   }, []);
 
-  if (!data) return <div className="container">Cargando…</div>;
+  if (!data) return <div className="container muted">Cargando…</div>;
 
   const tiles = [
     ["Usuarios", data.users_count],
@@ -24,8 +24,11 @@ export default function SuperDashboard() {
 
   return (
     <div className="container">
-      <h2>Dashboard general (superusuario)</h2>
-      <div className="card" style={{ marginBottom: 16 }}>
+      <div className="page-head">
+        <h2>Dashboard general</h2>
+        <p>Visión global del sistema — usuarios, controladores y actividad.</p>
+      </div>
+      <div className="card" style={{ marginBottom: 14 }}>
         <h3>Aperturas de casilleros — últimos 7 días</h3>
         <BarChart data={data.openings_last_7_days} />
       </div>

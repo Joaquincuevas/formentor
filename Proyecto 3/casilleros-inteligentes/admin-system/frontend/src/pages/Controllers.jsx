@@ -18,18 +18,29 @@ export default function Controllers() {
 
   return (
     <div className="container">
-      <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <h2>Controladores</h2>
+      <div className="row-between page-head">
+        <div>
+          <h2>Controladores</h2>
+          <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>
+            Gestiona tus controladores y las claves de cada casillero.
+          </p>
+        </div>
         <button className="btn" onClick={() => setModal({ type: "controller" })}>
-          + Añadir controlador
+          Añadir controlador
         </button>
       </div>
 
       {controllers.map((c) => (
-        <div className="card" key={c.id} style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <h3 style={{ color: "var(--text)" }}>
-              {c.name} <small style={{ color: "var(--muted)" }}>({c.controller_id})</small>
+        <div className="card" key={c.id} style={{ marginBottom: 14 }}>
+          <div className="row-between" style={{ marginBottom: 10 }}>
+            <h3 style={{
+              color: "var(--text)", textTransform: "none", letterSpacing: 0,
+              fontSize: 15, fontWeight: 600, margin: 0,
+            }}>
+              {c.name}{" "}
+              <span style={{ color: "var(--faint)", fontWeight: 400, fontSize: 13 }}>
+                {c.controller_id}
+              </span>
             </h3>
             <span className={`badge ${c.is_online ? "on" : "off"}`}>
               {c.is_online ? "Conectado" : "Desconectado"}
@@ -55,9 +66,9 @@ export default function Controllers() {
               ))}
             </tbody>
           </table>
-          <button className="btn secondary" style={{ marginTop: 10 }}
+          <button className="btn secondary" style={{ marginTop: 14 }}
                   onClick={() => setModal({ type: "locker", data: { controller: c.id } })}>
-            + Añadir casillero
+            Añadir casillero
           </button>
         </div>
       ))}

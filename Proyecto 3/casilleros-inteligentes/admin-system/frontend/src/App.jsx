@@ -39,14 +39,17 @@ export default function App() {
   return (
     <>
       <header className="topbar">
-        <span>🔒 Casilleros Inteligentes</span>
+        <span className="brand">
+          <span className="brand-mark">◩</span>
+          Casilleros
+        </span>
         <nav>
-          <NavLink to="/">Dashboard</NavLink>
+          <NavLink to="/" end>Dashboard</NavLink>
           <NavLink to="/controllers">Controladores</NavLink>
           {user.is_superuser && <NavLink to="/models">Modelos</NavLink>}
         </nav>
-        <span>
-          {user.username}{" "}
+        <span className="user-area">
+          <span className="user-email">{user.username}</span>
           <button className="btn secondary" onClick={logout}>Salir</button>
         </span>
       </header>
